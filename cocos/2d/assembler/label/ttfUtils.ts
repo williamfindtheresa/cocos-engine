@@ -28,7 +28,7 @@ import { Texture2D } from '../../../asset/assets';
 import { fragmentText, safeMeasureText, getBaselineOffset, BASELINE_RATIO } from '../../utils/text-utils';
 import { Color, Size, Vec2, Rect, logID, cclegacy } from '../../../core';
 import { HorizontalTextAlignment, Label, LabelOutline, VerticalTextAlignment, LabelShadow } from '../../components';
-import { ISharedLabelData, LetterRenderTexture } from './font-utils';
+import { ISharedLabelData, LetterRenderTexture, getFontScaleFactor } from './font-utils';
 import { UITransform } from '../../framework/ui-transform';
 import { dynamicAtlasManager } from '../../utils/dynamic-atlas/atlas-manager';
 import { BlendFactor } from '../../../gfx';
@@ -79,6 +79,8 @@ let _isBold = false;
 let _isItalic = false;
 let _isUnderline = false;
 
+const _dpr = getFontScaleFactor();
+
 const Alignment = [
     'left', // macro.TextAlignment.LEFT
     'center', // macro.TextAlignment.CENTER
@@ -111,7 +113,7 @@ export const ttfUtils =  {
             this._calDynamicAtlas(comp);
 
             comp.actualFontSize = _fontSize;
-            trans.setContentSize(_canvasSize);
+            trans.setContentSize(new Size(_canvasSize.width / _dpr, _canvasSize.height / _dpr));
 
             this.updateVertexData(comp);
             this.updateUVs(comp); // Empty
@@ -162,8 +164,10 @@ export const ttfUtils =  {
         _fontSize = comp.fontSize;
         _drawFontsize = _fontSize;
         _overflow = comp.overflow;
-        _nodeContentSize.width = _canvasSize.width = trans.width;
-        _nodeContentSize.height = _canvasSize.height = trans.height;
+        _nodeContentSize.width = trans.width;
+        _nodeContentSize.height = trans.height;
+        _canvasSize.width = trans.width * _dpr;
+        _canvasSize.height = trans.height * _dpr;
         _underlineThickness = comp.underlineHeight;
         _lineHeight = comp.lineHeight;
         _hAlign = comp.horizontalAlign;
@@ -232,9 +236,9 @@ export const ttfUtils =  {
     _calculateFillTextStartPosition () {
         let labelX = 0;
         if (_hAlign === HorizontalTextAlignment.RIGHT) {
-            labelX = _canvasSize.width - _canvasPadding.width;
+            labelX = (_canvasSize.width / _dpr) - _canvasPadding.width;
         } else if (_hAlign === HorizontalTextAlignment.CENTER) {
-            labelX = (_canvasSize.width - _canvasPadding.width) / 2;
+            labelX = ((_canvasSize.width / _dpr) - _canvasPadding.width) / 2;
         }
 
         const lineHeight = this._getLineHeight();
@@ -243,7 +247,7 @@ export const ttfUtils =  {
         let firstLinelabelY = _fontSize * (1 - BASELINE_RATIO / 2);
         if (_vAlign !== VerticalTextAlignment.TOP) {
             // free space in vertical direction
-            let blank = drawStartY + _canvasPadding.height + _fontSize - _canvasSize.height;
+            let blank = drawStartY + _canvasPadding.height + _fontSize - _canvasSize.height / _dpr;
             if (_vAlign === VerticalTextAlignment.BOTTOM) {
                 // Unlike BMFont, needs to reserve space below.
                 blank += BASELINE_RATIO / 2 * _fontSize;
@@ -290,19 +294,39 @@ export const ttfUtils =  {
         // draw shadow and underline
         this._drawTextEffect(_startPosition, lineHeight);
         // draw text and outline
+        this._upScaleFontDpr(_context);
         for (let i = 0; i < _splitStrings.length; ++i) {
             drawTextPosY = _startPosition.y + i * lineHeight;
             if (_outlineComp) {
-                _context.strokeText(_splitStrings[i], drawTextPosX, drawTextPosY);
+                _context.strokeText(_splitStrings[i], drawTextPosX * _dpr, drawTextPosY * _dpr);
             }
-            _context.fillText(_splitStrings[i], drawTextPosX, drawTextPosY);
+            _context.fillText(_splitStrings[i], drawTextPosX * _dpr, drawTextPosY * _dpr);
         }
-
+        this._downScaleFontPx(_context);
         if (_shadowComp) {
             _context.shadowColor = 'transparent';
         }
 
         this._uploadTexture(comp);
+    },
+
+    _upScaleFontDpr (context: CanvasRenderingContext2D | null) {
+        if (!context) {
+            return;
+        }
+        context.font = context.font.replace(
+            /(\d+)(px|em|rem|pt)/g,
+            (w, m:string, u:string) => (+m * _dpr).toString() + u,
+        );
+    },
+    _downScaleFontPx (context: CanvasRenderingContext2D | null) {
+        if (!context) {
+            return;
+        }
+        context.font = context.font.replace(
+            /(\d+)(px|em|rem|pt)/g,
+            (w, m:string, u:string) => (+m / _dpr).toString() + u,
+        );
     },
 
     _uploadTexture (comp: Label) {
@@ -358,7 +382,7 @@ export const ttfUtils =  {
 
     _setupOutline () {
         _context!.strokeStyle = `rgba(${_outlineColor.r}, ${_outlineColor.g}, ${_outlineColor.b}, ${_outlineColor.a / 255})`;
-        _context!.lineWidth = _outlineComp!.width * 2;
+        _context!.lineWidth = _outlineComp!.width * 2 * _dpr;
     },
 
     _setupShadow () {
@@ -391,10 +415,12 @@ export const ttfUtils =  {
             drawTextPosY = startPosition.y + i * lineHeight;
             // multiple lines need to be drawn outline and fill text
             if (isMultiple) {
+                this._upScaleFontDpr(_context);
                 if (_outlineComp) {
-                    _context!.strokeText(_splitStrings[i], drawTextPosX, drawTextPosY);
+                    _context!.strokeText(_splitStrings[i], drawTextPosX * _dpr, drawTextPosY * _dpr);
                 }
-                _context!.fillText(_splitStrings[i], drawTextPosX, drawTextPosY);
+                _context!.fillText(_splitStrings[i], drawTextPosX * _dpr, drawTextPosY * _dpr);
+                this._downScaleFontPx(_context);
             }
 
             // draw underline
@@ -408,7 +434,7 @@ export const ttfUtils =  {
                     _drawUnderlinePos.x = startPosition.x;
                 }
                 _drawUnderlinePos.y = drawTextPosY + _drawFontsize / 8;
-                _context!.fillRect(_drawUnderlinePos.x, _drawUnderlinePos.y, _drawUnderlineWidth, _underlineThickness);
+                _context!.fillRect(_drawUnderlinePos.x * _dpr, _drawUnderlinePos.y * _dpr, _drawUnderlineWidth * _dpr, _underlineThickness * _dpr);
             }
         }
 
@@ -591,8 +617,8 @@ export const ttfUtils =  {
             canvasSizeY = (_splitStrings.length + BASELINE_RATIO) * this._getLineHeight();
             const rawWidth = parseFloat(canvasSizeX.toFixed(2));
             const rawHeight = parseFloat(canvasSizeY.toFixed(2));
-            _canvasSize.width = rawWidth + _canvasPadding.width;
-            _canvasSize.height = rawHeight + _canvasPadding.height;
+            _canvasSize.width = (rawWidth + _canvasPadding.width) * _dpr;
+            _canvasSize.height = (rawHeight + _canvasPadding.height) * _dpr;
             _nodeContentSize.width = rawWidth + _contentSizeExtend.width;
             _nodeContentSize.height = rawHeight + _contentSizeExtend.height;
             break;
@@ -609,7 +635,7 @@ export const ttfUtils =  {
         case Overflow.RESIZE_HEIGHT: {
             this._calculateWrapText(paragraphedStrings);
             const rawHeight = (_splitStrings.length + BASELINE_RATIO) * this._getLineHeight();
-            _canvasSize.height = rawHeight + _canvasPadding.height;
+            _canvasSize.height = rawHeight * _dpr + _canvasPadding.height;
             // set node height
             _nodeContentSize.height = rawHeight + _contentSizeExtend.height;
             break;

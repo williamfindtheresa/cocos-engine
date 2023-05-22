@@ -23,13 +23,13 @@
 */
 
 import { JSB } from 'internal:constants';
-import { IConfig, FontLetterDefinition, FontAtlas } from '../../assets/bitmap-font';
+import { IConfig, FontLetterDefinition, FontAtlas, BitmapFont } from '../../assets/bitmap-font';
 import { SpriteFrame } from '../../assets/sprite-frame';
 import { isUnicodeCJK, isUnicodeSpace } from '../../utils/text-utils';
 import { Rect, Size, Vec2 } from '../../../core';
 import { HorizontalTextAlignment, VerticalTextAlignment, Label, Overflow, CacheMode } from '../../components/label';
 import { UITransform } from '../../framework/ui-transform';
-import { LetterAtlas, shareLabelInfo } from './font-utils';
+import { LetterAtlas, getFontScaleFactor, shareLabelInfo } from './font-utils';
 import { dynamicAtlasManager } from '../../utils/dynamic-atlas/atlas-manager';
 
 class LetterInfo {
@@ -79,15 +79,20 @@ let _labelWidth = 0;
 let _labelHeight = 0;
 let _maxLineWidth = 0;
 let QUAD_INDICES;
+let _dpr = 2;
+let _enableDpr = true;
 
 export const bmfontUtils = {
     updateRenderData (comp: Label) {
         if (!comp.renderData) {
             return;
         }
-
         if (_comp === comp) { return; }
-
+        if (comp.font instanceof BitmapFont) {
+            _dpr = 1;
+        } else {
+            _dpr = getFontScaleFactor();//Math.min(Math.ceil(screenAdapter.devicePixelRatio), 2);
+        }
         if (comp.renderData.vertDirty) {
             _comp = comp;
             _uiTrans = _comp.node._uiProps.uiTransformComp!;
@@ -98,13 +103,10 @@ export const bmfontUtils = {
 
             _comp.actualFontSize = _fontSize;
             _uiTrans.setContentSize(_contentSize);
-            this.updateUVs(comp);// dirty need
-            this.updateColor(comp); // dirty need
-
+            this.updateUVs(comp);
             _comp.renderData!.vertDirty = false;
             // fix bmfont run updateRenderData twice bug
-            // _comp.markForUpdateRenderData(false);
-
+            _comp.markForUpdateRenderData(false);
             _comp = null;
 
             this._resetProperties();
@@ -184,6 +186,7 @@ export const bmfontUtils = {
         _string = comp.string.toString();
         _fontSize = comp.fontSize;
         _originFontSize = _fntConfig ? _fntConfig.fontSize : comp.fontSize;
+        if (_enableDpr) _originFontSize *= _dpr;
         _hAlign = comp.horizontalAlign;
         _vAlign = comp.verticalAlign;
         _spacingX = comp.spacingX;
@@ -205,10 +208,8 @@ export const bmfontUtils = {
         } else {
             _isWrapText = comp.enableWrapText;
         }
-
         shareLabelInfo.lineHeight = _lineHeight;
         shareLabelInfo.fontSize = _fontSize;
-
         this._setupBMFontOverflowMetrics();
     },
 

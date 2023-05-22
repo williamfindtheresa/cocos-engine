@@ -43,6 +43,7 @@ export const letterFont = js.mixin(bmfontUtils, {
     },
 
     _updateFontFamily (comp) {
+        this.enableDpr(true);
         shareLabelInfo.fontAtlas = _shareAtlas;
         shareLabelInfo.fontFamily = this._getFontFamily(comp);
 
